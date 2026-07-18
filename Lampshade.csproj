@@ -7,10 +7,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <AssemblyName>ScreenDimmer</AssemblyName>
-    <RootNamespace>ScreenDimmer</RootNamespace>
+    <AssemblyName>Lampshade</AssemblyName>
+    <RootNamespace>Lampshade</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\lamp-mask.png" LogicalName="Lampshade.lamp-mask.png" />
+  </ItemGroup>
 
 </Project>

@@ -1,55 +1,100 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Reflection;
 
-namespace ScreenDimmer;
+namespace Lampshade;
+
+/// <summary>The visual state a tray icon should reflect.</summary>
+internal enum TrayIconState
+{
+    Normal,
+    Dimmed,
+    LowBlueLight,
+}
 
 /// <summary>
-/// Draws the two tray-icon states (bright / dimmed) at runtime with GDI+ instead of
-/// shipping separate .ico assets, so the icon always matches the current dim state.
+/// Builds the tray-icon states from the embedded lamp silhouette (a white-on-
+/// transparent alpha mask baked from Assets/lamp-mask.png at build time), tinted
+/// per state so the icon always reflects whether dimming and/or the low-blue-light
+/// filter are active.
 /// </summary>
 internal static class IconFactory
 {
-    public static Icon CreateTrayIcon(bool dimmed)
+    private const string MaskResourceName = "Lampshade.lamp-mask.png";
+
+    private static readonly Color NormalColor = Color.FromArgb(255, 196, 61);
+    private static readonly Color DimmedColor = Color.FromArgb(120, 120, 132);
+    private static readonly Color LowBlueLightColor = Color.FromArgb(255, 140, 40);
+
+    private static Bitmap? _mask;
+
+    public static Icon CreateTrayIcon(TrayIconState state)
     {
-        const int size = 32;
-        using var bitmap = new Bitmap(size, size);
-        using (var g = Graphics.FromImage(bitmap))
+        var color = state switch
+        {
+            TrayIconState.Dimmed => DimmedColor,
+            TrayIconState.LowBlueLight => LowBlueLightColor,
+            TrayIconState.Normal or _ => NormalColor,
+        };
+
+        using var tinted = TintMask(GetMask(), color);
+        using var icon32 = new Bitmap(32, 32);
+        using (var g = Graphics.FromImage(icon32))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-
-            var sunColor = dimmed ? Color.FromArgb(255, 120, 120, 130) : Color.FromArgb(255, 255, 196, 61);
-            var coreColor = dimmed ? Color.FromArgb(255, 90, 90, 100) : Color.FromArgb(255, 255, 209, 84);
-
-            float cx = size / 2f, cy = size / 2f, r = size * 0.22f;
-
-            if (!dimmed)
-            {
-                using var rayPen = new Pen(sunColor, size * 0.09f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-                for (var i = 0; i < 8; i++)
-                {
-                    var angle = Math.PI / 4 * i;
-                    var inner = r * 1.4f;
-                    var outer = r * 2.05f;
-                    var x1 = cx + inner * (float)Math.Cos(angle);
-                    var y1 = cy + inner * (float)Math.Sin(angle);
-                    var x2 = cx + outer * (float)Math.Cos(angle);
-                    var y2 = cy + outer * (float)Math.Sin(angle);
-                    g.DrawLine(rayPen, x1, y1, x2, y2);
-                }
-            }
-            else
-            {
-                // A crescent instead of rays reads clearly as "dimmed" at 16x16.
-                using var crescentBrush = new SolidBrush(Color.FromArgb(255, 70, 70, 82));
-                g.FillEllipse(crescentBrush, cx - r * 1.9f, cy - r * 1.9f, r * 3.8f, r * 3.8f);
-            }
-
-            using var coreBrush = new SolidBrush(coreColor);
-            g.FillEllipse(coreBrush, cx - r, cy - r, r * 2, r * 2);
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.DrawImage(tinted, 0, 0, 32, 32);
         }
 
-        var hIcon = bitmap.GetHicon();
-        return Icon.FromHandle(hIcon);
+        return Icon.FromHandle(icon32.GetHicon());
+    }
+
+    private static Bitmap GetMask()
+    {
+        if (_mask is not null)
+        {
+            return _mask;
+        }
+
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream(MaskResourceName)
+                            ?? throw new InvalidOperationException($"Embedded resource '{MaskResourceName}' not found.");
+        _mask = new Bitmap(stream);
+        return _mask;
+    }
+
+    /// <summary>Replaces the mask's RGB with <paramref name="color"/> while preserving its alpha channel.</summary>
+    private static Bitmap TintMask(Bitmap mask, Color color)
+    {
+        var result = new Bitmap(mask.Width, mask.Height, PixelFormat.Format32bppArgb);
+        var srcData = mask.LockBits(new Rectangle(0, 0, mask.Width, mask.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        var dstData = result.LockBits(new Rectangle(0, 0, result.Width, result.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+        try
+        {
+            var stride = srcData.Stride;
+            var bytes = stride * mask.Height;
+            var buffer = new byte[bytes];
+            System.Runtime.InteropServices.Marshal.Copy(srcData.Scan0, buffer, 0, bytes);
+
+            for (var i = 0; i < bytes; i += 4)
+            {
+                var alpha = buffer[i + 3];
+                buffer[i + 0] = color.B;
+                buffer[i + 1] = color.G;
+                buffer[i + 2] = color.R;
+                buffer[i + 3] = alpha;
+            }
+
+            System.Runtime.InteropServices.Marshal.Copy(buffer, 0, dstData.Scan0, bytes);
+        }
+        finally
+        {
+            mask.UnlockBits(srcData);
+            result.UnlockBits(dstData);
+        }
+
+        return result;
     }
 }

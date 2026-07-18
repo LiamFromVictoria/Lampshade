@@ -1,15 +1,15 @@
 using Microsoft.Win32;
 
-namespace ScreenDimmer;
+namespace Lampshade;
 
 /// <summary>
-/// Registers or unregisters ScreenDimmer to launch at sign-in via the per-user
+/// Registers or unregisters Lampshade to launch at sign-in via the per-user
 /// Run registry key. No installer/scheduled task needed for a single-exe tray app.
 /// </summary>
 internal static class StartupManager
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "ScreenDimmer";
+    private const string ValueName = "Lampshade";
 
     public static bool IsEnabled()
     {

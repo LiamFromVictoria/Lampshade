@@ -2,12 +2,12 @@ using System;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace ScreenDimmer;
+namespace Lampshade;
 
 internal static class Program
 {
-    private const string SingleInstanceMutexName = "ScreenDimmer.SingleInstance";
-    private const string ToggleSignalName = "ScreenDimmer.ToggleSignal";
+    private const string SingleInstanceMutexName = "Lampshade.SingleInstance";
+    private const string ToggleSignalName = "Lampshade.ToggleSignal";
 
     /// <summary>
     /// Application entry point. This app has no main window — it lives entirely

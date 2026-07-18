@@ -1,35 +1,43 @@
 using System.Drawing;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
 
-namespace ScreenDimmer;
+namespace Lampshade;
 
 /// <summary>
-/// Owns the tray icon, the per-monitor dim overlays, and all menu wiring. This is
-/// the whole application — there is no main window.
+/// Owns the tray icon, the per-monitor dim/low-blue-light overlays, the Settings
+/// window, and all menu wiring. This is the whole application — there is no main
+/// window.
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
-    private static readonly int[] DimLevels = { 25, 50, 65, 80, 90 };
+    private static readonly Color LowBlueLightColor = Color.FromArgb(255, 130, 30);
 
     private readonly AppSettings _settings;
     private readonly NotifyIcon _trayIcon;
-    private readonly ToolStripMenuItem _toggleMenuItem;
-    private readonly ToolStripMenuItem _startWithWindowsMenuItem;
-    private readonly Dictionary<int, ToolStripMenuItem> _dimLevelMenuItems = new();
-    private readonly List<DimOverlayForm> _overlays = new();
+    private readonly ModernContextMenuStrip _menu;
+    private readonly ToolStripMenuItem _dimMenuItem;
+    private readonly ToolStripMenuItem _lowBlueLightMenuItem;
 
-    private readonly Icon _brightIcon;
-    private readonly Icon _dimIcon;
+    private readonly List<TintOverlayForm> _dimOverlays = new();
+    private readonly List<TintOverlayForm> _lowBlueLightOverlays = new();
+
+    private readonly Icon _normalIcon;
+    private readonly Icon _dimmedIcon;
+    private readonly Icon _lowBlueLightIcon;
 
     private readonly EventWaitHandle _toggleSignal;
     private readonly Thread _toggleSignalListener;
+
+    private SettingsForm? _settingsForm;
     private bool _isDimmed;
+    private bool _isLowBlueLight;
     private bool _disposed;
 
     public TrayApplicationContext(EventWaitHandle toggleSignal)
@@ -37,47 +45,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _settings = AppSettings.Load();
         _toggleSignal = toggleSignal;
 
-        _brightIcon = IconFactory.CreateTrayIcon(dimmed: false);
-        _dimIcon = IconFactory.CreateTrayIcon(dimmed: true);
+        _normalIcon = IconFactory.CreateTrayIcon(TrayIconState.Normal);
+        _dimmedIcon = IconFactory.CreateTrayIcon(TrayIconState.Dimmed);
+        _lowBlueLightIcon = IconFactory.CreateTrayIcon(TrayIconState.LowBlueLight);
 
-        _toggleMenuItem = new ToolStripMenuItem("Dim Mode", null, (_, _) => ToggleDim())
-        {
-            CheckOnClick = false,
-        };
-
-        var dimLevelMenu = new ToolStripMenuItem("Dim Level");
-        foreach (var level in DimLevels)
-        {
-            var item = new ToolStripMenuItem($"{level}%", null, (_, _) => SetDimLevel(level))
-            {
-                Checked = level == _settings.DimPercent,
-            };
-            _dimLevelMenuItems[level] = item;
-            dimLevelMenu.DropDownItems.Add(item);
-        }
-
-        _startWithWindowsMenuItem = new ToolStripMenuItem("Start with Windows", null, (_, _) => ToggleStartWithWindows())
-        {
-            Checked = StartupManager.IsEnabled(),
-        };
-        // Keep the persisted flag honest in case the registry value was removed out-of-band.
-        _settings.StartWithWindows = _startWithWindowsMenuItem.Checked;
-
+        _dimMenuItem = new ToolStripMenuItem("Dim Mode", null, (_, _) => ToggleDim());
+        _lowBlueLightMenuItem = new ToolStripMenuItem("Low Blue Light", null, (_, _) => ToggleLowBlueLight());
+        var settingsMenuItem = new ToolStripMenuItem("Settings…", null, (_, _) => ShowSettings());
         var exitMenuItem = new ToolStripMenuItem("Exit", null, (_, _) => Exit());
 
-        var menu = new ContextMenuStrip();
-        menu.Items.Add(_toggleMenuItem);
-        menu.Items.Add(dimLevelMenu);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_startWithWindowsMenuItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(exitMenuItem);
+        _menu = new ModernContextMenuStrip();
+        _menu.Items.Add(_dimMenuItem);
+        _menu.Items.Add(_lowBlueLightMenuItem);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(settingsMenuItem);
+        _menu.Items.Add(new ToolStripSeparator());
+        _menu.Items.Add(exitMenuItem);
 
         _trayIcon = new NotifyIcon
         {
-            Icon = _brightIcon,
-            Text = "ScreenDimmer — click to dim",
-            ContextMenuStrip = menu,
+            Icon = _normalIcon,
+            Text = "Lampshade",
+            ContextMenuStrip = _menu,
             Visible = true,
         };
         _trayIcon.MouseUp += OnTrayIconMouseUp;
@@ -103,7 +92,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         })
         {
             IsBackground = true,
-            Name = "ScreenDimmer.ToggleSignalListener",
+            Name = "Lampshade.ToggleSignalListener",
         };
         _toggleSignalListener.Start();
 
@@ -112,95 +101,156 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnTrayIconMouseUp(object? sender, MouseEventArgs e)
     {
-        if (e.Button == MouseButtons.Left)
+        if (e.Button is MouseButtons.Left or MouseButtons.Right)
         {
-            ToggleDim();
+            ShowTrayMenu();
+        }
+    }
+
+    /// <summary>
+    /// NotifyIcon only auto-shows its ContextMenuStrip on a right-click. We want the
+    /// same menu on a left-click too, so we invoke the framework's own (non-public)
+    /// display routine — it gets positioning, dismiss-on-click-away, and keyboard
+    /// nav exactly right. Fall back to a manual Show if that private method is ever
+    /// unavailable on a future runtime.
+    /// </summary>
+    private void ShowTrayMenu()
+    {
+        var showContextMenu = typeof(NotifyIcon).GetMethod("ShowContextMenu", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (showContextMenu is not null)
+        {
+            showContextMenu.Invoke(_trayIcon, null);
+        }
+        else
+        {
+            _menu.Show(Cursor.Position);
         }
     }
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e)
     {
-        // Monitor added/removed/resolution changed while dimmed: rebuild overlays
-        // to match the new monitor layout.
+        // Monitor added/removed/resolution changed: rebuild whichever overlay sets
+        // are currently active to match the new monitor layout.
         if (_isDimmed)
         {
-            RemoveOverlays();
-            CreateOverlays();
+            RebuildOverlaySet(_dimOverlays, Color.Black, _settings.DimPercent);
+        }
+        if (_isLowBlueLight)
+        {
+            RebuildOverlaySet(_lowBlueLightOverlays, LowBlueLightColor, _settings.LowBlueLightPercent);
         }
     }
 
     private void ToggleDim()
     {
         _isDimmed = !_isDimmed;
-
         if (_isDimmed)
         {
-            CreateOverlays();
+            RebuildOverlaySet(_dimOverlays, Color.Black, _settings.DimPercent);
         }
         else
         {
-            RemoveOverlays();
+            ClearOverlaySet(_dimOverlays);
         }
-
         UpdateMenuAndIconState();
     }
 
-    private void SetDimLevel(int percent)
+    private void ToggleLowBlueLight()
+    {
+        _isLowBlueLight = !_isLowBlueLight;
+        if (_isLowBlueLight)
+        {
+            RebuildOverlaySet(_lowBlueLightOverlays, LowBlueLightColor, _settings.LowBlueLightPercent);
+        }
+        else
+        {
+            ClearOverlaySet(_lowBlueLightOverlays);
+        }
+        UpdateMenuAndIconState();
+    }
+
+    private void ApplyDimPercent(int percent)
     {
         _settings.DimPercent = percent;
         _settings.Save();
-
-        foreach (var item in _dimLevelMenuItems.Values)
+        foreach (var overlay in _dimOverlays)
         {
-            item.Checked = false;
-        }
-        _dimLevelMenuItems[percent].Checked = true;
-
-        foreach (var overlay in _overlays)
-        {
-            overlay.SetDimPercent(percent);
+            overlay.SetIntensityPercent(percent);
         }
     }
 
-    private void ToggleStartWithWindows()
+    private void ApplyLowBlueLightPercent(int percent)
     {
-        var enable = !_startWithWindowsMenuItem.Checked;
-        StartupManager.SetEnabled(enable);
-        _startWithWindowsMenuItem.Checked = enable;
-        _settings.StartWithWindows = enable;
+        _settings.LowBlueLightPercent = percent;
+        _settings.Save();
+        foreach (var overlay in _lowBlueLightOverlays)
+        {
+            overlay.SetIntensityPercent(percent);
+        }
+    }
+
+    private void ApplyStartWithWindows(bool enabled)
+    {
+        StartupManager.SetEnabled(enabled);
+        _settings.StartWithWindows = enabled;
         _settings.Save();
     }
 
-    private void CreateOverlays()
+    private void ShowSettings()
     {
-        RemoveOverlays();
+        if (_settingsForm is { IsDisposed: false })
+        {
+            _settingsForm.Activate();
+            return;
+        }
 
+        _settingsForm = new SettingsForm(
+            _settings,
+            StartupManager.IsEnabled(),
+            _normalIcon,
+            ApplyDimPercent,
+            ApplyLowBlueLightPercent,
+            ApplyStartWithWindows);
+        _settingsForm.FormClosed += (_, _) => _settingsForm = null;
+        _settingsForm.Show();
+        _settingsForm.Activate();
+    }
+
+    private static void RebuildOverlaySet(List<TintOverlayForm> overlays, Color color, int intensityPercent)
+    {
+        ClearOverlaySet(overlays);
         foreach (var screen in Screen.AllScreens)
         {
-            var overlay = new DimOverlayForm(screen.Bounds, _settings.DimPercent);
-            _overlays.Add(overlay);
+            var overlay = new TintOverlayForm(screen.Bounds, color, intensityPercent);
+            overlays.Add(overlay);
             overlay.Show();
         }
     }
 
-    private void RemoveOverlays()
+    private static void ClearOverlaySet(List<TintOverlayForm> overlays)
     {
-        foreach (var overlay in _overlays)
+        foreach (var overlay in overlays)
         {
             overlay.Close();
             overlay.Dispose();
         }
-        _overlays.Clear();
+        overlays.Clear();
     }
 
     private void UpdateMenuAndIconState()
     {
-        _toggleMenuItem.Text = _isDimmed ? "Dim Mode (On)" : "Dim Mode (Off)";
-        _toggleMenuItem.Checked = _isDimmed;
-        _trayIcon.Icon = _isDimmed ? _dimIcon : _brightIcon;
-        _trayIcon.Text = _isDimmed
-            ? $"ScreenDimmer — dimmed to {_settings.DimPercent}% (click to restore)"
-            : "ScreenDimmer — click to dim";
+        _dimMenuItem.Checked = _isDimmed;
+        _lowBlueLightMenuItem.Checked = _isLowBlueLight;
+
+        _trayIcon.Icon = _isDimmed ? _dimmedIcon : _isLowBlueLight ? _lowBlueLightIcon : _normalIcon;
+
+        _trayIcon.Text = (_isDimmed, _isLowBlueLight) switch
+        {
+            (true, true) => $"Lampshade — dimmed {_settings.DimPercent}% + low blue light",
+            (true, false) => $"Lampshade — dimmed {_settings.DimPercent}%",
+            (false, true) => $"Lampshade — low blue light {_settings.LowBlueLightPercent}%",
+            (false, false) => "Lampshade",
+        };
     }
 
     private void Exit()
@@ -213,17 +263,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         _toggleSignal.Set(); // wake the listener thread so it observes _disposed and exits
-        RemoveOverlays();
+
+        ClearOverlaySet(_dimOverlays);
+        ClearOverlaySet(_lowBlueLightOverlays);
+        _settingsForm?.Close();
 
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
 
-        var brightHandle = _brightIcon.Handle;
-        var dimHandle = _dimIcon.Handle;
-        _brightIcon.Dispose();
-        _dimIcon.Dispose();
-        DestroyIcon(brightHandle);
-        DestroyIcon(dimHandle);
+        var normalHandle = _normalIcon.Handle;
+        var dimmedHandle = _dimmedIcon.Handle;
+        var lowBlueLightHandle = _lowBlueLightIcon.Handle;
+        _normalIcon.Dispose();
+        _dimmedIcon.Dispose();
+        _lowBlueLightIcon.Dispose();
+        DestroyIcon(normalHandle);
+        DestroyIcon(dimmedHandle);
+        DestroyIcon(lowBlueLightHandle);
 
         ExitThread();
     }
