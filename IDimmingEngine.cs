@@ -12,11 +12,19 @@ namespace Lampshade;
 /// </summary>
 internal interface IDimmingEngine : IDisposable
 {
-    /// <summary>Turns Dim Mode on/off and sets its strength in one call.</summary>
-    void SetDimActive(bool active, int percent);
+    /// <summary>
+    /// Turns Dim Mode on/off and sets its strength in one call. Returns <c>true</c>
+    /// if <paramref name="percent"/> was fully applied on every connected display,
+    /// or <c>false</c> if it had to be clamped to a weaker level a display/driver
+    /// would actually accept (see <see cref="GammaRampDimmingEngine"/>).
+    /// </summary>
+    bool SetDimActive(bool active, int percent);
 
-    /// <summary>Updates Dim Mode's strength while it's already active (e.g. live slider drag).</summary>
-    void SetDimPercent(int percent);
+    /// <summary>
+    /// Updates Dim Mode's strength while it's already active (e.g. live slider
+    /// drag). Same clamped-vs-fully-applied return semantics as <see cref="SetDimActive"/>.
+    /// </summary>
+    bool SetDimPercent(int percent);
 
     /// <summary>Turns Low Blue Light on/off and sets its strength in one call.</summary>
     void SetLowBlueLightActive(bool active, int percent);

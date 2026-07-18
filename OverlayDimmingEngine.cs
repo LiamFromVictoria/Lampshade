@@ -12,7 +12,7 @@ internal sealed class OverlayDimmingEngine : IDimmingEngine
     private readonly List<TintOverlayForm> _dimOverlays = new();
     private readonly List<TintOverlayForm> _lowBlueLightOverlays = new();
 
-    public void SetDimActive(bool active, int percent)
+    public bool SetDimActive(bool active, int percent)
     {
         if (active)
         {
@@ -22,14 +22,16 @@ internal sealed class OverlayDimmingEngine : IDimmingEngine
         {
             ClearOverlaySet(_dimOverlays);
         }
+        return true; // window opacity has no OS-level rejection path, unlike SetDeviceGammaRamp
     }
 
-    public void SetDimPercent(int percent)
+    public bool SetDimPercent(int percent)
     {
         foreach (var overlay in _dimOverlays)
         {
             overlay.SetIntensityPercent(percent);
         }
+        return true;
     }
 
     public void SetLowBlueLightActive(bool active, int percent)

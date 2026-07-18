@@ -9,7 +9,7 @@ A lightweight Windows tray app that dims your screens and/or applies a warm low-
 - Both modes run independently and can be combined.
 - **Dimming method** — choose how the effect reaches the screen:
   - **Overlay** (default) — a per-monitor click-through window; works on any GPU, but a fullscreen-exclusive game or Vulkan/DirectX swapchain that bypasses the desktop compositor won't show it.
-  - **Gamma Ramp (Native)** — scales the display driver's gamma table directly (`SetDeviceGammaRamp`); vendor-neutral across NVIDIA/AMD/Intel and reaches fullscreen-exclusive content too, though some drivers reject very extreme settings.
+  - **Gamma Ramp (Native)** — scales the display driver's gamma table directly (`SetDeviceGammaRamp`); vendor-neutral across NVIDIA/AMD/Intel and reaches fullscreen-exclusive content too. Windows itself caps how dark a gamma ramp can go; if a display can't reach the requested strength, Lampshade applies the strongest it will accept and shows a warning rather than silently doing nothing.
 - **Tray-only UI** — lives entirely in the system tray via a right-click menu (`Dim Mode`, `Low Blue Light`, `Settings…`, `Exit`); no taskbar window.
 - **Settings window** — adjust dim/tint strength, dimming method, and toggle "Start with Windows".
 - **Start with Windows** — optional auto-launch at sign-in via the per-user `Run` registry key (no installer needed).

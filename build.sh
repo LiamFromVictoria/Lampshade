@@ -6,6 +6,7 @@ set -euo pipefail
 
 CONFIGURATION="${CONFIGURATION:-Release}"
 PUBLISH_DIR="${PUBLISH_DIR:-publish}"
+VERSION="${VERSION:-}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -18,12 +19,18 @@ dotnet restore
 echo "== validate: code style (dotnet format) =="
 dotnet format --verify-no-changes --no-restore
 
+VERSION_ARGS=()
+if [[ -n "$VERSION" ]]; then
+  echo "== version: stamping build with $VERSION =="
+  VERSION_ARGS=(-p:Version="$VERSION")
+fi
+
 echo "== validate: build with warnings as errors ($CONFIGURATION) =="
-dotnet build --configuration "$CONFIGURATION" --no-restore -warnaserror
+dotnet build --configuration "$CONFIGURATION" --no-restore -warnaserror "${VERSION_ARGS[@]}"
 
 echo "== publish ($CONFIGURATION -> $PUBLISH_DIR) =="
 rm -rf "$PUBLISH_DIR"
-dotnet publish --configuration "$CONFIGURATION" --no-build --output "$PUBLISH_DIR"
+dotnet publish --configuration "$CONFIGURATION" --no-build --output "$PUBLISH_DIR" "${VERSION_ARGS[@]}"
 
 echo "== done =="
 echo "Build output: $PUBLISH_DIR/Lampshade.exe"

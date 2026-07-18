@@ -35,6 +35,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private SettingsForm? _settingsForm;
     private bool _isDimmed;
     private bool _isLowBlueLight;
+    private bool _dimClamped;
     private bool _disposed;
 
     public TrayApplicationContext(EventWaitHandle toggleSignal)
@@ -136,7 +137,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ToggleDim()
     {
         _isDimmed = !_isDimmed;
-        _engine.SetDimActive(_isDimmed, _settings.DimPercent);
+        _dimClamped = !_engine.SetDimActive(_isDimmed, _settings.DimPercent);
         UpdateMenuAndIconState();
     }
 
@@ -147,11 +148,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         UpdateMenuAndIconState();
     }
 
-    private void ApplyDimPercent(int percent)
+    private bool ApplyDimPercent(int percent)
     {
         _settings.DimPercent = percent;
         _settings.Save();
-        _engine.SetDimPercent(percent);
+        _dimClamped = !_engine.SetDimPercent(percent);
+        UpdateMenuAndIconState();
+        return !_dimClamped;
     }
 
     private void ApplyLowBlueLightPercent(int percent)
@@ -178,9 +181,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _settings.DimMethod = method;
         _settings.Save();
 
-        _engine = CreateEngine(method);
-        _engine.SetDimActive(_isDimmed, _settings.DimPercent);
+        _dimClamped = !_engine.SetDimActive(_isDimmed, _settings.DimPercent);
         _engine.SetLowBlueLightActive(_isLowBlueLight, _settings.LowBlueLightPercent);
+        UpdateMenuAndIconState();
     }
 
     private static IDimmingEngine CreateEngine(DimMethod method) => method switch
@@ -224,10 +227,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _trayIcon.Icon = _isDimmed ? _dimmedIcon : _isLowBlueLight ? _lowBlueLightIcon : _normalIcon;
 
+        var cappedSuffix = _isDimmed && _dimClamped ? " (capped by display)" : "";
         _trayIcon.Text = (_isDimmed, _isLowBlueLight) switch
         {
-            (true, true) => $"Lampshade — dimmed {_settings.DimPercent}% + low blue light",
-            (true, false) => $"Lampshade — dimmed {_settings.DimPercent}%",
+            (true, true) => $"Lampshade — dimmed {_settings.DimPercent}%{cappedSuffix} + low blue light",
+            (true, false) => $"Lampshade — dimmed {_settings.DimPercent}%{cappedSuffix}",
             (false, true) => $"Lampshade — low blue light {_settings.LowBlueLightPercent}%",
             (false, false) => "Lampshade",
         };

@@ -16,7 +16,7 @@ internal sealed class SettingsForm : Form
 
     private const int DwmwaUseImmersiveDarkMode = 20;
 
-    private readonly Action<int> _onDimPercentChanged;
+    private readonly Func<int, bool> _onDimPercentChanged;
     private readonly Action<int> _onLowBlueLightPercentChanged;
     private readonly Action<bool> _onStartWithWindowsChanged;
     private readonly Action<DimMethod> _onDimMethodChanged;
@@ -30,7 +30,7 @@ internal sealed class SettingsForm : Form
         AppSettings settings,
         bool startWithWindows,
         Icon windowIcon,
-        Action<int> onDimPercentChanged,
+        Func<int, bool> onDimPercentChanged,
         Action<int> onLowBlueLightPercentChanged,
         Action<bool> onStartWithWindowsChanged,
         Action<DimMethod> onDimMethodChanged)
@@ -99,10 +99,19 @@ internal sealed class SettingsForm : Form
             Location = new Point(280, 40),
             AutoSize = true,
         };
+        var dimClampHint = new Label
+        {
+            Text = "⚠ This display won't go this dark with Gamma Ramp — showing the strongest it accepts.",
+            Font = Theme.FontSmall,
+            ForeColor = Theme.Accent,
+            Location = new Point(0, 64),
+            Size = new Size(340, 16),
+            Visible = false,
+        };
         dimSlider.ValueChanged += (_, _) =>
         {
             dimValueLabel.Text = $"{dimSlider.Value}%";
-            _onDimPercentChanged(dimSlider.Value);
+            dimClampHint.Visible = !_onDimPercentChanged(dimSlider.Value);
         };
 
         var divider = new Panel
@@ -133,7 +142,8 @@ internal sealed class SettingsForm : Form
         {
             Text = "Overlay draws a per-monitor window and works on any GPU. Gamma Ramp adjusts "
                 + "the display driver directly (NVIDIA/AMD/Intel) and also dims fullscreen-exclusive "
-                + "games, but very strong settings may be ignored by some drivers.",
+                + "games, but Windows caps how dark it can go — a warning appears above if a display "
+                + "can't reach the requested strength.",
             Font = Theme.FontSmall,
             ForeColor = Theme.TextSecondary,
             Location = new Point(0, 160),
@@ -173,6 +183,7 @@ internal sealed class SettingsForm : Form
         _generalPanel.Controls.Add(dimLabel);
         _generalPanel.Controls.Add(dimSlider);
         _generalPanel.Controls.Add(dimValueLabel);
+        _generalPanel.Controls.Add(dimClampHint);
         _generalPanel.Controls.Add(divider);
         _generalPanel.Controls.Add(methodLabel);
         _generalPanel.Controls.Add(methodDropdown);
