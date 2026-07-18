@@ -31,8 +31,10 @@ jobs:
         run: ./build.sh
 
       - name: Package artifact
-        shell: bash
-        run: (cd publish && tar -a -c -f "../Lampshade-${VERSION}-win.zip" *)
+        shell: pwsh
+        run: |
+          & "$env:ProgramFiles\7-Zip\7z.exe" a -tzip "Lampshade-$env:VERSION-win.zip" "$PWD\publish\*"
+          if ($LASTEXITCODE -ne 0) { throw "7z exited with code $LASTEXITCODE" }
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v3
