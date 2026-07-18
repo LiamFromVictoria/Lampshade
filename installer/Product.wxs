@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Builds Lampshade.msi from a published app directory. Invoke via the wix CLI,
+  passing ProductVersion and PublishDir as preprocessor variables and x64 as
+  the target architecture, e.g.:
+
+    wix build installer/Product.wxs -ext WixToolset.UI.wixext
+      -d ProductVersion=1.0.0 -d PublishDir=publish -arch x64 -o Lampshade-1.0.0.msi
+
+  UpgradeCode is fixed forever, changing it breaks upgrade/repair detection
+  for anyone who installed an earlier version. Package Version drives Windows
+  Installer's major-upgrade comparison (MajorUpgrade below), so every release
+  must publish a strictly increasing Version here.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="Lampshade"
+           Language="1033"
+           Version="$(var.ProductVersion)"
+           Manufacturer="Liam Knightley"
+           UpgradeCode="2df903b3-2929-458a-afa7-0b53909522c7"
+           InstallerVersion="500"
+           Scope="perUser">
+
+    <SummaryInformation Description="Lampshade $(var.ProductVersion) Setup" Manufacturer="Liam Knightley" />
+
+    <!--
+      Handles both "upgrade" (installing a newer version over an older one,
+      auto-uninstalling the old files first) and "downgrade" (blocked with a
+      clear message instead of Windows Installer's default cryptic error).
+      Schedule="afterInstallExecute": the new version's files install and
+      register as a component client *before* the old product is removed.
+      The default schedule (afterInstallValidate) removes the old product
+      first, which, combined with Files-harvested components using stable
+      per-path auto-GUIDs, left Windows Installer's shared-component
+      reference count out of sync and silently blocked a later uninstall
+      ("Disallowing uninstallation of component: ... since another client
+      exists"), leaving files and the Start Menu shortcut behind. Verified by
+      a full install-1.0.0 -> upgrade-to-1.0.1 -> uninstall cycle via real
+      msiexec runs: the default schedule left files/shortcut behind after
+      uninstall; afterInstallExecute removes everything cleanly.
+      "Repair" needs no extra authoring: it's inherent to Windows Installer,
+      re-running this MSI on an already-installed version shows WixUI_Minimal's
+      built-in maintenance dialog (Repair/Remove), and msiexec /fa always works.
+    -->
+    <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of Lampshade is already installed. Uninstall it before installing this version." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="$(sys.SOURCEFILEDIR)..\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/LiamFromVictoria/Lampshade" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/LiamFromVictoria/Lampshade" />
+    <Property Id="ARPNOREPAIR" Value="0" />
+
+    <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)InstallInfo.rtf" />
+
+    <Feature Id="MainFeature" Title="Lampshade" Level="1">
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentGroupRef Id="AppFiles" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Lampshade" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+  </Fragment>
+
+  <!-- Every file from the self-contained publish output, harvested automatically. -->
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.PublishDir)\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <!--
+    Start Menu shortcut in its own component: it targets Lampshade.exe, which
+    lives in a different (harvested) component, so this component's resiliency
+    KeyPath has to be a registry value rather than the shortcut itself.
+  -->
+  <Fragment>
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="*">
+      <Shortcut Id="LampshadeStartMenuShortcut"
+                Name="Lampshade"
+                Target="[INSTALLFOLDER]Lampshade.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <RemoveFolder Id="RemoveProgramMenuFolder" Directory="ProgramMenuFolder" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\Lampshade" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+</Wix>

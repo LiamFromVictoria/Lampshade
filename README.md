@@ -21,6 +21,15 @@ A lightweight Windows tray app that dims your screens and/or applies a warm low-
 - Windows 10/11
 - [.NET 8 SDK](https://dotnet.microsoft.com/download) (to build; the published app is self-contained enough to just run the `.exe`)
 
+## Installing
+
+Download the latest release from the [Releases page](https://github.com/LiamFromVictoria/Lampshade/releases):
+
+- **`Lampshade-<version>-win-x64.msi`** (recommended) — a real Windows Installer package. Installs per-user (no admin prompt) under `%LocalAppData%\Programs\Lampshade` with a Start Menu shortcut. Re-running the MSI on an already-installed version offers **Repair**/**Remove**; installing a newer version automatically upgrades in place (`msiexec /fa` also works for repair, and `msiexec /x` for uninstall, from a script).
+- **`Lampshade-<version>-win-x64.zip`** — the same self-contained build as a portable zip; extract and run `Lampshade.exe` directly, no installation.
+
+Both are self-contained (bundle the .NET runtime) — no separate .NET install needed to run them.
+
 ## Build & Run
 
 ```bash
@@ -62,6 +71,7 @@ Right-click the tray icon to:
 | `OverlayDimmingEngine.cs` | Per-monitor overlay-window dimming backend |
 | `GammaRampDimmingEngine.cs` | Vendor-neutral GDI gamma-ramp dimming backend |
 | `Theme.cs`, `Modern*.cs` | Custom dark-mode UI controls (toggle, slider, context menu) |
+| `installer/Product.wxs` | WiX source for the release MSI (install/upgrade/repair) |
 
 ## License
 

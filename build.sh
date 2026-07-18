@@ -7,6 +7,7 @@ set -euo pipefail
 CONFIGURATION="${CONFIGURATION:-Release}"
 PUBLISH_DIR="${PUBLISH_DIR:-publish}"
 VERSION="${VERSION:-}"
+RUNTIME_ID="${RUNTIME_ID:-}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -30,7 +31,13 @@ dotnet build --configuration "$CONFIGURATION" --no-restore -warnaserror "${VERSI
 
 echo "== publish ($CONFIGURATION -> $PUBLISH_DIR) =="
 rm -rf "$PUBLISH_DIR"
-dotnet publish --configuration "$CONFIGURATION" --no-build --output "$PUBLISH_DIR" "${VERSION_ARGS[@]}"
+if [[ -n "$RUNTIME_ID" ]]; then
+  echo "== publish: self-contained, runtime $RUNTIME_ID =="
+  dotnet publish --configuration "$CONFIGURATION" --runtime "$RUNTIME_ID" --self-contained true \
+    --output "$PUBLISH_DIR" "${VERSION_ARGS[@]}"
+else
+  dotnet publish --configuration "$CONFIGURATION" --no-build --output "$PUBLISH_DIR" "${VERSION_ARGS[@]}"
+fi
 
 echo "== done =="
 echo "Build output: $PUBLISH_DIR/Lampshade.exe"
