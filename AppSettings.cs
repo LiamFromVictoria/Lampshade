@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Lampshade;
 
@@ -19,6 +20,10 @@ internal sealed class AppSettings
 
     /// <summary>How strong the warm/amber low-blue-light tint is, from 10 to 100.</summary>
     public int LowBlueLightPercent { get; set; } = 40;
+
+    /// <summary>Which backend renders the dim/low-blue-light effects. See <see cref="DimMethod"/>.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DimMethod DimMethod { get; set; } = DimMethod.Overlay;
 
     /// <summary>Whether Lampshade should launch automatically at Windows sign-in.</summary>
     public bool StartWithWindows { get; set; }

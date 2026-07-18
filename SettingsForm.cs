@@ -19,6 +19,7 @@ internal sealed class SettingsForm : Form
     private readonly Action<int> _onDimPercentChanged;
     private readonly Action<int> _onLowBlueLightPercentChanged;
     private readonly Action<bool> _onStartWithWindowsChanged;
+    private readonly Action<DimMethod> _onDimMethodChanged;
 
     private readonly Button _generalNavButton;
     private readonly Button _lowBlueLightNavButton;
@@ -31,11 +32,13 @@ internal sealed class SettingsForm : Form
         Icon windowIcon,
         Action<int> onDimPercentChanged,
         Action<int> onLowBlueLightPercentChanged,
-        Action<bool> onStartWithWindowsChanged)
+        Action<bool> onStartWithWindowsChanged,
+        Action<DimMethod> onDimMethodChanged)
     {
         _onDimPercentChanged = onDimPercentChanged;
         _onLowBlueLightPercentChanged = onLowBlueLightPercentChanged;
         _onStartWithWindowsChanged = onStartWithWindowsChanged;
+        _onDimMethodChanged = onDimMethodChanged;
 
         Text = "Lampshade Settings";
         Icon = windowIcon;
@@ -45,7 +48,7 @@ internal sealed class SettingsForm : Form
         ShowInTaskbar = true;
         TopMost = true;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(380, 300);
+        ClientSize = new Size(380, 370);
         BackColor = Theme.WindowBackground;
         ForeColor = Theme.TextPrimary;
         Font = Theme.FontRegular;
@@ -69,7 +72,7 @@ internal sealed class SettingsForm : Form
         _generalPanel = new Panel
         {
             Location = new Point(20, 68),
-            Size = new Size(340, 200),
+            Size = new Size(340, 270),
             BackColor = Theme.WindowBackground,
         };
 
@@ -104,7 +107,42 @@ internal sealed class SettingsForm : Form
 
         var divider = new Panel
         {
-            Location = new Point(0, 88),
+            Location = new Point(0, 80),
+            Size = new Size(340, 1),
+            BackColor = Theme.Border,
+        };
+
+        var methodLabel = new Label
+        {
+            Text = "Dimming method",
+            Font = Theme.FontSemibold,
+            ForeColor = Theme.TextPrimary,
+            Location = new Point(0, 96),
+            AutoSize = true,
+        };
+        var methodDropdown = new ModernDropdown
+        {
+            Items = new[] { "Overlay", "Gamma Ramp (Native)" },
+            SelectedIndex = settings.DimMethod == DimMethod.GammaRamp ? 1 : 0,
+            Location = new Point(0, 122),
+            Size = new Size(210, 30),
+        };
+        methodDropdown.SelectedIndexChanged += (_, _) =>
+            _onDimMethodChanged(methodDropdown.SelectedIndex == 1 ? DimMethod.GammaRamp : DimMethod.Overlay);
+        var methodHint = new Label
+        {
+            Text = "Overlay draws a per-monitor window and works on any GPU. Gamma Ramp adjusts "
+                + "the display driver directly (NVIDIA/AMD/Intel) and also dims fullscreen-exclusive "
+                + "games, but very strong settings may be ignored by some drivers.",
+            Font = Theme.FontSmall,
+            ForeColor = Theme.TextSecondary,
+            Location = new Point(0, 160),
+            Size = new Size(340, 48),
+        };
+
+        var divider2 = new Panel
+        {
+            Location = new Point(0, 216),
             Size = new Size(340, 1),
             BackColor = Theme.Border,
         };
@@ -114,7 +152,7 @@ internal sealed class SettingsForm : Form
             Text = "Start with Windows",
             Font = Theme.FontSemibold,
             ForeColor = Theme.TextPrimary,
-            Location = new Point(0, 108),
+            Location = new Point(0, 232),
             AutoSize = true,
         };
         var startupHint = new Label
@@ -122,12 +160,12 @@ internal sealed class SettingsForm : Form
             Text = "Launch automatically at sign-in.",
             Font = Theme.FontSmall,
             ForeColor = Theme.TextSecondary,
-            Location = new Point(0, 130),
+            Location = new Point(0, 254),
             AutoSize = true,
         };
         var startupToggle = new ModernToggle
         {
-            Location = new Point(300, 110),
+            Location = new Point(300, 234),
         };
         startupToggle.SetInitialChecked(startWithWindows);
         startupToggle.CheckedChanged += (_, _) => _onStartWithWindowsChanged(startupToggle.Checked);
@@ -136,6 +174,10 @@ internal sealed class SettingsForm : Form
         _generalPanel.Controls.Add(dimSlider);
         _generalPanel.Controls.Add(dimValueLabel);
         _generalPanel.Controls.Add(divider);
+        _generalPanel.Controls.Add(methodLabel);
+        _generalPanel.Controls.Add(methodDropdown);
+        _generalPanel.Controls.Add(methodHint);
+        _generalPanel.Controls.Add(divider2);
         _generalPanel.Controls.Add(startupLabel);
         _generalPanel.Controls.Add(startupHint);
         _generalPanel.Controls.Add(startupToggle);
@@ -144,7 +186,7 @@ internal sealed class SettingsForm : Form
         _lowBlueLightPanel = new Panel
         {
             Location = new Point(20, 68),
-            Size = new Size(340, 200),
+            Size = new Size(340, 270),
             BackColor = Theme.WindowBackground,
             Visible = false,
         };
@@ -197,7 +239,7 @@ internal sealed class SettingsForm : Form
         {
             Text = "Close",
             DialogResult = DialogResult.Cancel,
-            Location = new Point(280, 262),
+            Location = new Point(280, 332),
             Size = new Size(80, 28),
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.PanelBackground,

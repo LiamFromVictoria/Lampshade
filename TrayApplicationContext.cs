@@ -8,16 +8,14 @@ using Microsoft.Win32;
 namespace Lampshade;
 
 /// <summary>
-/// Owns the tray icon, the per-monitor dim/low-blue-light overlays, the Settings
-/// window, and all menu wiring. This is the whole application — there is no main
-/// window.
+/// Owns the tray icon, the pluggable <see cref="IDimmingEngine"/> that renders the
+/// dim/low-blue-light effects, the Settings window, and all menu wiring. This is
+/// the whole application — there is no main window.
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
-
-    private static readonly Color LowBlueLightColor = Color.FromArgb(255, 130, 30);
 
     private readonly AppSettings _settings;
     private readonly NotifyIcon _trayIcon;
@@ -25,8 +23,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _dimMenuItem;
     private readonly ToolStripMenuItem _lowBlueLightMenuItem;
 
-    private readonly List<TintOverlayForm> _dimOverlays = new();
-    private readonly List<TintOverlayForm> _lowBlueLightOverlays = new();
+    private IDimmingEngine _engine;
 
     private readonly Icon _normalIcon;
     private readonly Icon _dimmedIcon;
@@ -44,6 +41,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _settings = AppSettings.Load();
         _toggleSignal = toggleSignal;
+        _engine = CreateEngine(_settings.DimMethod);
 
         _normalIcon = IconFactory.CreateTrayIcon(TrayIconState.Normal);
         _dimmedIcon = IconFactory.CreateTrayIcon(TrayIconState.Dimmed);
@@ -129,43 +127,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnDisplaySettingsChanged(object? sender, EventArgs e)
     {
-        // Monitor added/removed/resolution changed: rebuild whichever overlay sets
-        // are currently active to match the new monitor layout.
-        if (_isDimmed)
-        {
-            RebuildOverlaySet(_dimOverlays, Color.Black, _settings.DimPercent);
-        }
-        if (_isLowBlueLight)
-        {
-            RebuildOverlaySet(_lowBlueLightOverlays, LowBlueLightColor, _settings.LowBlueLightPercent);
-        }
+        // Monitor added/removed/resolution changed: let the active engine resync
+        // whichever overlay windows or gamma ramps are currently active to match
+        // the new monitor layout.
+        _engine.RefreshForDisplayChange(_isDimmed, _settings.DimPercent, _isLowBlueLight, _settings.LowBlueLightPercent);
     }
 
     private void ToggleDim()
     {
         _isDimmed = !_isDimmed;
-        if (_isDimmed)
-        {
-            RebuildOverlaySet(_dimOverlays, Color.Black, _settings.DimPercent);
-        }
-        else
-        {
-            ClearOverlaySet(_dimOverlays);
-        }
+        _engine.SetDimActive(_isDimmed, _settings.DimPercent);
         UpdateMenuAndIconState();
     }
 
     private void ToggleLowBlueLight()
     {
         _isLowBlueLight = !_isLowBlueLight;
-        if (_isLowBlueLight)
-        {
-            RebuildOverlaySet(_lowBlueLightOverlays, LowBlueLightColor, _settings.LowBlueLightPercent);
-        }
-        else
-        {
-            ClearOverlaySet(_lowBlueLightOverlays);
-        }
+        _engine.SetLowBlueLightActive(_isLowBlueLight, _settings.LowBlueLightPercent);
         UpdateMenuAndIconState();
     }
 
@@ -173,21 +151,43 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         _settings.DimPercent = percent;
         _settings.Save();
-        foreach (var overlay in _dimOverlays)
-        {
-            overlay.SetIntensityPercent(percent);
-        }
+        _engine.SetDimPercent(percent);
     }
 
     private void ApplyLowBlueLightPercent(int percent)
     {
         _settings.LowBlueLightPercent = percent;
         _settings.Save();
-        foreach (var overlay in _lowBlueLightOverlays)
-        {
-            overlay.SetIntensityPercent(percent);
-        }
+        _engine.SetLowBlueLightPercent(percent);
     }
+
+    /// <summary>
+    /// Swaps the active <see cref="IDimmingEngine"/>. The old engine is disposed
+    /// first so it restores whatever it changed (closes overlay windows / resets
+    /// gamma ramps), then the new one is brought up already reflecting the current
+    /// on/off + intensity state, so switching methods mid-session is seamless.
+    /// </summary>
+    private void ApplyDimMethod(DimMethod method)
+    {
+        if (method == _settings.DimMethod)
+        {
+            return;
+        }
+
+        _engine.Dispose();
+        _settings.DimMethod = method;
+        _settings.Save();
+
+        _engine = CreateEngine(method);
+        _engine.SetDimActive(_isDimmed, _settings.DimPercent);
+        _engine.SetLowBlueLightActive(_isLowBlueLight, _settings.LowBlueLightPercent);
+    }
+
+    private static IDimmingEngine CreateEngine(DimMethod method) => method switch
+    {
+        DimMethod.GammaRamp => new GammaRampDimmingEngine(),
+        _ => new OverlayDimmingEngine(),
+    };
 
     private void ApplyStartWithWindows(bool enabled)
     {
@@ -210,31 +210,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _normalIcon,
             ApplyDimPercent,
             ApplyLowBlueLightPercent,
-            ApplyStartWithWindows);
+            ApplyStartWithWindows,
+            ApplyDimMethod);
         _settingsForm.FormClosed += (_, _) => _settingsForm = null;
         _settingsForm.Show();
         _settingsForm.Activate();
-    }
-
-    private static void RebuildOverlaySet(List<TintOverlayForm> overlays, Color color, int intensityPercent)
-    {
-        ClearOverlaySet(overlays);
-        foreach (var screen in Screen.AllScreens)
-        {
-            var overlay = new TintOverlayForm(screen.Bounds, color, intensityPercent);
-            overlays.Add(overlay);
-            overlay.Show();
-        }
-    }
-
-    private static void ClearOverlaySet(List<TintOverlayForm> overlays)
-    {
-        foreach (var overlay in overlays)
-        {
-            overlay.Close();
-            overlay.Dispose();
-        }
-        overlays.Clear();
     }
 
     private void UpdateMenuAndIconState()
@@ -264,8 +244,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         _toggleSignal.Set(); // wake the listener thread so it observes _disposed and exits
 
-        ClearOverlaySet(_dimOverlays);
-        ClearOverlaySet(_lowBlueLightOverlays);
+        _engine.Dispose();
         _settingsForm?.Close();
 
         _trayIcon.Visible = false;

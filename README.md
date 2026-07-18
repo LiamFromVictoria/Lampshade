@@ -6,9 +6,12 @@ A lightweight Windows tray app that dims your screens and/or applies a warm low-
 
 - **Dim Mode** — darkens all monitors by an adjustable percentage (10–90%).
 - **Low Blue Light** — applies an adjustable warm/amber tint (10–100%) to ease eye strain, especially at night.
-- Both modes run independently and can be combined; each renders as a per-monitor click-through overlay.
+- Both modes run independently and can be combined.
+- **Dimming method** — choose how the effect reaches the screen:
+  - **Overlay** (default) — a per-monitor click-through window; works on any GPU, but a fullscreen-exclusive game or Vulkan/DirectX swapchain that bypasses the desktop compositor won't show it.
+  - **Gamma Ramp (Native)** — scales the display driver's gamma table directly (`SetDeviceGammaRamp`); vendor-neutral across NVIDIA/AMD/Intel and reaches fullscreen-exclusive content too, though some drivers reject very extreme settings.
 - **Tray-only UI** — lives entirely in the system tray via a right-click menu (`Dim Mode`, `Low Blue Light`, `Settings…`, `Exit`); no taskbar window.
-- **Settings window** — adjust dim/tint strength and toggle "Start with Windows".
+- **Settings window** — adjust dim/tint strength, dimming method, and toggle "Start with Windows".
 - **Start with Windows** — optional auto-launch at sign-in via the per-user `Run` registry key (no installer needed).
 - **Single instance + hotkey-friendly toggle** — relaunching the app (e.g. from a pinned shortcut with a keyboard shortcut) toggles the already-running instance's dim state instead of spawning a second tray icon.
 - Settings persist as JSON under `%AppData%\Lampshade\settings.json`.
@@ -39,7 +42,7 @@ Run `publish/Lampshade.exe` — it starts minimized to the system tray.
 
 Right-click the tray icon to:
 - Toggle **Dim Mode** or **Low Blue Light** independently.
-- Open **Settings…** to adjust dim strength, tint strength, and startup behavior.
+- Open **Settings…** to adjust dim strength, tint strength, dimming method, and startup behavior.
 - **Exit** the app.
 
 ## Project Layout
@@ -47,12 +50,17 @@ Right-click the tray icon to:
 | File | Purpose |
 |---|---|
 | `Program.cs` | Entry point; single-instance enforcement and toggle signaling |
-| `TrayApplicationContext.cs` | Tray icon, menu wiring, overlay lifecycle |
+| `TrayApplicationContext.cs` | Tray icon, menu wiring, dimming engine lifecycle |
 | `TintOverlayForm.cs` | Per-monitor click-through dim/tint overlay window |
 | `SettingsForm.cs` | Settings window UI |
 | `AppSettings.cs` | JSON-persisted user preferences |
 | `StartupManager.cs` | Registers/unregisters launch-at-sign-in |
 | `IconFactory.cs` | Generates tray icon states |
+| `IDimmingEngine.cs` | Dimming backend strategy interface |
+| `DimMethod.cs` | Overlay vs. Gamma Ramp method enum |
+| `DimmingMath.cs` | Shared low-blue-light strength curve, reused by every engine |
+| `OverlayDimmingEngine.cs` | Per-monitor overlay-window dimming backend |
+| `GammaRampDimmingEngine.cs` | Vendor-neutral GDI gamma-ramp dimming backend |
 | `Theme.cs`, `Modern*.cs` | Custom dark-mode UI controls (toggle, slider, context menu) |
 
 ## License
