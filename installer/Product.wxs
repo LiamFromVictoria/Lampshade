@@ -56,8 +56,46 @@
 
     <WixVariable Id="WixUILicenseRtf" Value="$(sys.SOURCEFILEDIR)InstallInfo.rtf" />
 
+    <!--
+      Install-time choices, offered on InstallOptionsDlg below. Both are
+      one-time defaults for a fresh install; the app's own Settings window
+      remains the ongoing control for toggling "Start with Windows" (and a
+      shortcut can always be recreated by reinstalling with the box checked),
+      so neither component needs to react to the property changing on a
+      later repair/upgrade.
+      INSTALLSHORTCUT defaults checked (matches the previous unconditional
+      behavior); LAUNCHATSTARTUP defaults unchecked (matches AppSettings'
+      own StartWithWindows default of false) so autostart is opt-in.
+    -->
+    <Property Id="INSTALLSHORTCUT" Value="1" />
+
+    <UI>
+      <Dialog Id="InstallOptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="Title" Type="Text" X="20" Y="15" Width="330" Height="30" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Installation Options" />
+        <Control Id="Description" Type="Text" X="20" Y="48" Width="330" Height="20" Text="Choose how Lampshade sets itself up on this computer." />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="373" Height="0" />
+
+        <Control Id="ShortcutCheckBox" Type="CheckBox" X="20" Y="90" Width="330" Height="18"
+                 Property="INSTALLSHORTCUT" CheckBoxValue="1" Text="Create a Start Menu shortcut" />
+        <Control Id="StartupCheckBox" Type="CheckBox" X="20" Y="115" Width="330" Height="18"
+                 Property="LAUNCHATSTARTUP" CheckBoxValue="1" Text="Start Lampshade automatically when I sign in" />
+
+        <Control Id="Next" Type="PushButton" X="212" Y="243" Width="56" Height="17" Default="yes" Text="Next">
+          <Publish Event="NewDialog" Value="WelcomeEulaDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <InstallUISequence>
+        <Show Dialog="InstallOptionsDlg" Before="WelcomeEulaDlg" Condition="NOT Installed" />
+      </InstallUISequence>
+    </UI>
+
     <Feature Id="MainFeature" Title="Lampshade" Level="1">
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="StartupRegistration" />
       <ComponentGroupRef Id="AppFiles" />
     </Feature>
 
@@ -86,7 +124,7 @@
     KeyPath has to be a registry value rather than the shortcut itself.
   -->
   <Fragment>
-    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="*">
+    <Component Id="StartMenuShortcut" Directory="ProgramMenuFolder" Guid="*" Condition="INSTALLSHORTCUT">
       <Shortcut Id="LampshadeStartMenuShortcut"
                 Name="Lampshade"
                 Target="[INSTALLFOLDER]Lampshade.exe"
@@ -94,6 +132,23 @@
                 Icon="AppIcon" />
       <RemoveFolder Id="RemoveProgramMenuFolder" Directory="ProgramMenuFolder" On="uninstall" />
       <RegistryValue Root="HKCU" Key="Software\Lampshade" Name="StartMenuShortcutInstalled" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+  <!--
+    Mirrors exactly what StartupManager.SetEnabled(true) writes at runtime
+    (same key, value name, and quoted-path format), so the installer's
+    checkbox and the app's own "Start with Windows" toggle agree on what
+    "enabled" looks like in the registry.
+  -->
+  <Fragment>
+    <Component Id="StartupRegistration" Directory="INSTALLFOLDER" Guid="*" Condition="LAUNCHATSTARTUP">
+      <RegistryValue Root="HKCU"
+                     Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                     Name="Lampshade"
+                     Type="string"
+                     Value="&quot;[INSTALLFOLDER]Lampshade.exe&quot;"
+                     KeyPath="yes" />
     </Component>
   </Fragment>
 </Wix>

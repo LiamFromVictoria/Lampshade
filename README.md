@@ -25,7 +25,7 @@ A lightweight Windows tray app that dims your screens and/or applies a warm low-
 
 Download the latest release from the [Releases page](https://github.com/LiamFromVictoria/Lampshade/releases):
 
-- **`Lampshade-<version>-win-x64.msi`** (recommended) — a real Windows Installer package. Installs per-user (no admin prompt) under `%LocalAppData%\Programs\Lampshade` with a Start Menu shortcut. Re-running the MSI on an already-installed version offers **Repair**/**Remove**; installing a newer version automatically upgrades in place (`msiexec /fa` also works for repair, and `msiexec /x` for uninstall, from a script).
+- **`Lampshade-<version>-win-x64.msi`** (recommended) — a real Windows Installer package. Installs per-user (no admin prompt) under `%LocalAppData%\Programs\Lampshade`. The setup wizard's first screen lets you choose whether to create a Start Menu shortcut (on by default) and whether to start Lampshade automatically at sign-in (off by default) — both are one-time install choices; autostart can also be toggled later from the app's own Settings window. Re-running the MSI on an already-installed version offers **Repair**/**Remove**; installing a newer version automatically upgrades in place (`msiexec /fa` also works for repair, and `msiexec /x` for uninstall, from a script).
 - **`Lampshade-<version>-win-x64.zip`** — the same self-contained build as a portable zip; extract and run `Lampshade.exe` directly, no installation.
 
 Both are self-contained (bundle the .NET runtime) — no separate .NET install needed to run them.
